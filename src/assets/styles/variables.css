@@ -1,0 +1,66 @@
+:root {
+  /* ===== 主色调：暖砂色系 ===== */
+  --primary: #C8673A;
+  --primary-hover: #B85A30;
+  --primary-light: #FDF0E8;
+  --primary-soft: #FEF7F2;
+
+  /* 辅助：深灰蓝（非传统 AI 蓝） */
+  --accent: #4A5568;
+  --accent-light: #718096;
+  --accent-dark: #2D3748;
+
+  /* 背景 */
+  --bg: #FAF9F6;
+  --bg-warm: #F5F2EC;
+  --bg-cool: #F7F8FA;
+
+  /* 卡片 / 表面 */
+  --surface: #FFFFFF;
+  --surface-hover: #FDFCFB;
+  --surface-elevated: #FFFFFF;
+
+  /* 文字 */
+  --text: #1E1F24;
+  --text-secondary: #5B5D65;
+  --text-tertiary: #94969E;
+  --text-placeholder: #B0B3BA;
+
+  /* 边框 */
+  --border: #E8E6E0;
+  --border-light: #F0EFEA;
+  --border-focus: #D4C4B0;
+
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+
+  /* 圆角 */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* 渐变 */
+  --gradient-warm: linear-gradient(135deg, #C8673A 0%, #D4845C 50%, #E0A080 100%);
+  --gradient-subtle: linear-gradient(135deg, #FDF0E8 0%, #F5F2EC 100%);
+  --gradient-card: linear-gradient(180deg, #FFFFFF 0%, #FDFCFB 100%);
+
+  /* 过渡 */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 字体 */
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+
+  /* 布局 */
+  --navbar-height: 68px;
+  --max-width: 1280px;
+}
