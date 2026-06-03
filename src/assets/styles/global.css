@@ -135,6 +135,17 @@ img {
   background: var(--primary-light);
 }
 
+.btn-danger {
+  border-color: rgba(200, 80, 50, 0.45);
+  color: #c85032;
+}
+
+.btn-danger:hover {
+  border-color: #c85032;
+  color: #c85032;
+  background: rgba(200, 80, 50, 0.08);
+}
+
 /* 通用输入框 */
 .input {
   width: 100%;

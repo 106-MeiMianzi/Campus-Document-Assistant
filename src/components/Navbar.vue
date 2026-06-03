@@ -60,10 +60,11 @@
         <div class="user-menu">
           <div class="user-info">
             <span class="user-name">{{ user?.name || '用户' }}</span>
-            <span class="user-role">{{ user?.role || '' }}</span>
+            <span class="user-role">{{ user?.roleLabel || '' }}</span>
           </div>
-          <div class="avatar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <div class="avatar" @click="showProfile = true" title="个人资料">
+            <img v-if="user?.avatar" :src="user.avatar" alt="" class="avatar-img" />
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
@@ -78,16 +79,20 @@
         </div>
       </div>
     </div>
+
+    <UserProfileModal v-model:visible="showProfile" />
   </nav>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import UserProfileModal from './UserProfileModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const showProfile = ref(false)
 
 const user = computed(() => auth.user)
 
@@ -241,6 +246,13 @@ function doLogout() {
 .avatar:hover {
   background: var(--primary-light);
   color: var(--primary);
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
 }
 
 /* 用户菜单 */

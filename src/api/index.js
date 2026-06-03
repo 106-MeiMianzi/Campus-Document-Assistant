@@ -36,6 +36,11 @@ export function getUserInfo() {
   return http.get('/user/info')
 }
 
+/** 更新头像（data URL 或图片 URL） */
+export function updateAvatar(avatarUrl) {
+  return http.patch('/user/avatar', { avatarUrl })
+}
+
 /* ==============================
    Document 文档
    ============================== */

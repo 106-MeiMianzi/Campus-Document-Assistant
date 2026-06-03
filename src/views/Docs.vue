@@ -57,7 +57,7 @@
               </svg>
             </button>
           </div>
-          <button class="import-btn" @click="showImport = true">
+          <button v-if="auth.isTeacher" class="import-btn" @click="showImport = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/>
@@ -228,6 +228,14 @@
             </svg>
             暂无文件
           </button>
+          <button
+            v-if="auth.isTeacher && selectedDoc.status"
+            class="btn btn-outline btn-danger"
+            :disabled="deletingDoc"
+            @click="removeDoc(selectedDoc)"
+          >
+            删除文档
+          </button>
           <button class="btn btn-primary" @click="goChat(selectedDoc)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -307,10 +315,12 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Navbar from '../components/Navbar.vue'
-import { uploadDocument, getDocumentList } from '../api/index.js'
+import { uploadDocument, getDocumentList, deleteDocument } from '../api/index.js'
 import { getDefaultDocs, getDocText, getDOCXHtml, getXLSXHtml } from '../services/knowledgeBase.js'
+import { useAuthStore } from '../stores/auth.js'
 
 const router = useRouter()
+const auth = useAuthStore()
 const searchText = ref('')
 const activeCategory = ref('全部分类')
 const activeDepts = ref([])
@@ -325,6 +335,7 @@ const importing = ref(false)
 const importFiles = ref([])
 const importProgress = ref('')
 const importedCount = ref(0)
+const deletingDoc = ref(false)
 
 const categoryDefs = [
   { name: '全部分类', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>' },
@@ -490,8 +501,25 @@ function toggleDept(dept) {
 
 function goChat(doc) {
   const title = typeof doc === 'string' ? doc : doc.title
-  const docId = typeof doc === 'object' ? doc.id : ''
+  const docId = typeof doc === 'object' && doc.id != null ? String(doc.id) : ''
   router.push({ path: '/chat', query: { q: title, docId } })
+}
+
+async function removeDoc(doc) {
+  if (!doc?.id || deletingDoc.value) return
+  if (!confirm(`确定删除《${doc.title}》？删除后无法恢复。`)) return
+  deletingDoc.value = true
+  try {
+    await deleteDocument(doc.id)
+    allDocs.value = allDocs.value.filter(d => d.id !== doc.id)
+    if (selectedDoc.value?.id === doc.id) {
+      selectedDoc.value = null
+    }
+  } catch (err) {
+    alert(err.message || '删除失败')
+  } finally {
+    deletingDoc.value = false
+  }
 }
 
 // ---- 文件导入 ----

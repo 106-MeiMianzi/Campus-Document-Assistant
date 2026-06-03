@@ -399,7 +399,7 @@ async function switchChat(id) {
             location: c.location || c.department || '',
             department: c.department || '',
             date: c.date || '',
-            excerpt: c.excerpt || c.snippet || ''
+            excerpt: c.excerpt || c.snippet || c.content || ''
           }))
         }))
         messages.value = chatStore[id]
@@ -472,7 +472,7 @@ async function sendMessage(question) {
           location: c.location || c.department || '',
           department: c.department || '',
           date: c.date || '',
-          excerpt: c.excerpt || c.snippet || ''
+          excerpt: c.excerpt || c.snippet || c.content || ''
         }))
       }
       if (data.related_docs) {
