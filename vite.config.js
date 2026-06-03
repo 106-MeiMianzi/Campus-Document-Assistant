@@ -17,8 +17,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    // 代理配置：将 /api 请求转发到后端服务器
-    // 修改 target 为你的后端实际地址，例如 http://localhost:8080
+    // 代理配置：开发时若 VITE_API_BASE=/api 则转发到 cpolar
     proxy: {
       '/api': {
         target: 'https://campusdocai.cpolar.top',

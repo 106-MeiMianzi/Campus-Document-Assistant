@@ -131,6 +131,93 @@
                 </div>
               </div>
 
+              <!-- 校园卡补办：在线申请（对接后端） -->
+              <div v-if="isCardService" class="panel-section card-apply-section">
+                <h3 class="section-label">在线申请</h3>
+
+                <div v-if="!auth.isAuthenticated" class="apply-hint card">
+                  <p>登录后可提交补办申请并查看办理进度。</p>
+                  <button type="button" class="btn btn-primary" @click="goLogin">去登录</button>
+                </div>
+
+                <template v-else>
+                  <form class="apply-form card" @submit.prevent="submitCardApply">
+                    <div class="form-row">
+                      <label>申请类型</label>
+                      <select v-model="cardForm.requestType" required>
+                        <option value="LOST">挂失补办</option>
+                        <option value="DAMAGED">损坏换卡</option>
+                        <option value="UNFREEZE">解冻</option>
+                      </select>
+                    </div>
+                    <div class="form-row">
+                      <label>联系电话</label>
+                      <input
+                        v-model="cardForm.contactPhone"
+                        type="tel"
+                        placeholder="请输入手机号"
+                        required
+                      />
+                    </div>
+                    <div class="form-row">
+                      <label>领取地点</label>
+                      <input
+                        v-model="cardForm.pickupLocation"
+                        type="text"
+                        placeholder="默认：一卡通中心"
+                      />
+                    </div>
+                    <p v-if="cardError" class="form-error">{{ cardError }}</p>
+                    <button type="submit" class="btn btn-primary" :disabled="cardSubmitting">
+                      {{ cardSubmitting ? '提交中…' : '提交申请' }}
+                    </button>
+                  </form>
+
+                  <div class="my-requests">
+                    <div class="requests-header">
+                      <h3 class="section-label">我的申请</h3>
+                      <button
+                        type="button"
+                        class="btn-text"
+                        :disabled="cardListLoading"
+                        @click="loadCardRequests"
+                      >
+                        刷新
+                      </button>
+                    </div>
+                    <p v-if="cardListLoading" class="requests-empty">加载中…</p>
+                    <p v-else-if="cardRequests.length === 0" class="requests-empty">暂无申请记录</p>
+                    <ul v-else class="request-list">
+                      <li
+                        v-for="req in cardRequests"
+                        :key="req.id"
+                        class="request-item card"
+                      >
+                        <div class="request-main">
+                          <span class="request-type">{{ requestTypeLabel(req.requestType) }}</span>
+                          <span class="request-status" :class="statusClass(req.status)">
+                            {{ statusLabel(req.status) }}
+                          </span>
+                        </div>
+                        <div class="request-meta">
+                          <span>{{ req.pickupLocation }}</span>
+                          <span>{{ formatTime(req.createdAt) }}</span>
+                        </div>
+                        <button
+                          v-if="req.status === 'SUBMITTED'"
+                          type="button"
+                          class="btn btn-outline btn-sm"
+                          :disabled="cardCancelingId === req.id"
+                          @click="cancelCardReq(req.id)"
+                        >
+                          {{ cardCancelingId === req.id ? '取消中…' : '取消申请' }}
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </template>
+              </div>
+
               <!-- 联系信息 -->
               <div class="panel-section contact-section">
                 <h3 class="section-label">联系方式</h3>
@@ -150,13 +237,142 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import Navbar from '../components/Navbar.vue'
+import { useAuthStore } from '../stores/auth'
+import {
+  createCardReplacement,
+  getCardReplacementList,
+  cancelCardReplacement
+} from '../api'
+import { getToken } from '../api/request'
 
 const router = useRouter()
 const route = useRoute()
+const auth = useAuthStore()
 const activeService = ref(null)
+
+const CARD_SERVICE_TITLE = '校园卡补办'
+const isCardService = computed(() => activeService.value?.title === CARD_SERVICE_TITLE)
+
+const cardForm = ref({
+  requestType: 'LOST',
+  contactPhone: '',
+  pickupLocation: '一卡通中心'
+})
+const cardError = ref('')
+const cardSubmitting = ref(false)
+const cardRequests = ref([])
+const cardListLoading = ref(false)
+const cardCancelingId = ref(null)
+
+const REQUEST_TYPE_LABELS = {
+  LOST: '挂失补办',
+  DAMAGED: '损坏换卡',
+  UNFREEZE: '解冻'
+}
+
+const STATUS_LABELS = {
+  SUBMITTED: '待受理',
+  PROCESSING: '处理中',
+  READY: '待领取',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消'
+}
+
+function requestTypeLabel(type) {
+  return REQUEST_TYPE_LABELS[type] || type
+}
+
+function statusLabel(status) {
+  return STATUS_LABELS[status] || status
+}
+
+function statusClass(status) {
+  return `status-${(status || '').toLowerCase()}`
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function prefillCardForm() {
+  if (auth.user?.phone) {
+    cardForm.value.contactPhone = auth.user.phone
+  }
+}
+
+async function loadCardRequests() {
+  if (!getToken()) return
+  cardListLoading.value = true
+  cardError.value = ''
+  try {
+    const { data } = await getCardReplacementList({ page: 1, size: 20 })
+    cardRequests.value = data?.list || []
+  } catch (err) {
+    cardError.value = err.message || '加载申请列表失败'
+  } finally {
+    cardListLoading.value = false
+  }
+}
+
+async function submitCardApply() {
+  if (!getToken()) {
+    goLogin()
+    return
+  }
+  cardSubmitting.value = true
+  cardError.value = ''
+  try {
+    const payload = {
+      requestType: cardForm.value.requestType,
+      contactPhone: cardForm.value.contactPhone.trim(),
+      pickupLocation: cardForm.value.pickupLocation?.trim() || undefined
+    }
+    await createCardReplacement(payload)
+    await loadCardRequests()
+    cardForm.value.requestType = 'LOST'
+    prefillCardForm()
+    if (!cardForm.value.pickupLocation) {
+      cardForm.value.pickupLocation = '一卡通中心'
+    }
+  } catch (err) {
+    cardError.value = err.message || '提交失败'
+  } finally {
+    cardSubmitting.value = false
+  }
+}
+
+async function cancelCardReq(id) {
+  cardCancelingId.value = id
+  cardError.value = ''
+  try {
+    await cancelCardReplacement(id)
+    await loadCardRequests()
+  } catch (err) {
+    cardError.value = err.message || '取消失败'
+  } finally {
+    cardCancelingId.value = null
+  }
+}
+
+function goLogin() {
+  closeService()
+  router.push({ path: '/login', query: { redirect: '/service?item=校园卡' } })
+}
+
+watch(activeService, (svc) => {
+  if (svc?.title === CARD_SERVICE_TITLE) {
+    prefillCardForm()
+    if (auth.isAuthenticated && getToken()) {
+      loadCardRequests()
+    }
+  }
+})
 
 const services = [
   {
@@ -263,7 +479,10 @@ function closeService() {
 
 function goChat(title) {
   closeService()
-  router.push({ path: '/chat', query: { q: title } })
+  const q = title === CARD_SERVICE_TITLE
+    ? '校园卡挂失补办流程和所需材料是什么？'
+    : title
+  router.push({ path: '/chat', query: { q } })
 }
 
 function goDocs() {
@@ -575,6 +794,169 @@ onMounted(() => {
 .meta-item.material {
   background: #FFF8E8;
   color: #8B7355;
+}
+
+/* 校园卡在线申请 */
+.card-apply-section {
+  margin-top: 8px;
+}
+
+.apply-hint {
+  padding: 20px;
+  text-align: center;
+}
+
+.apply-hint p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+
+.apply-form {
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.form-row {
+  margin-bottom: 14px;
+}
+
+.form-row label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.form-row input,
+.form-row select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.form-row input:focus,
+.form-row select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.form-error {
+  font-size: 0.82rem;
+  color: #c45c3a;
+  margin-bottom: 10px;
+}
+
+.apply-form .btn-primary {
+  width: 100%;
+}
+
+.requests-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.requests-header .section-label {
+  margin-bottom: 0;
+}
+
+.btn-text {
+  font-size: 0.82rem;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.btn-text:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.requests-empty {
+  font-size: 0.88rem;
+  color: var(--text-tertiary);
+  padding: 12px 0;
+}
+
+.request-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.request-item {
+  padding: 14px 16px;
+}
+
+.request-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.request-type {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.request-status {
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.request-status.status-submitted {
+  background: #fff4e6;
+  color: #b86e00;
+}
+
+.request-status.status-processing {
+  background: #eef2f7;
+  color: #4a5568;
+}
+
+.request-status.status-ready {
+  background: #e8f4e8;
+  color: #4a8a4a;
+}
+
+.request-status.status-completed {
+  background: #e8f0e8;
+  color: #3d6b3d;
+}
+
+.request-status.status-cancelled {
+  background: var(--bg-warm);
+  color: var(--text-tertiary);
+}
+
+.request-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  margin-bottom: 10px;
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.82rem;
 }
 
 /* 联系方式 */

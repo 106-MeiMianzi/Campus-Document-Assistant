@@ -141,3 +141,27 @@ export function deleteConversation(id) {
 export async function getChatHistory() {
   return http.get('/conversation/list')
 }
+
+/* ==============================
+   Service 办事大厅 — 校园卡补办
+   ============================== */
+
+/** 提交校园卡补办申请 */
+export function createCardReplacement(payload) {
+  return http.post('/service/card-replacement', payload)
+}
+
+/** 我的校园卡补办申请列表 */
+export function getCardReplacementList(params) {
+  return http.get('/service/card-replacement/list', { params })
+}
+
+/** 校园卡补办申请详情 */
+export function getCardReplacementDetail(id) {
+  return http.get(`/service/card-replacement/${id}`)
+}
+
+/** 取消校园卡补办申请 */
+export function cancelCardReplacement(id) {
+  return http.post(`/service/card-replacement/${id}/cancel`)
+}
