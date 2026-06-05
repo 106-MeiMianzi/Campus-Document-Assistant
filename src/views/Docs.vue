@@ -465,6 +465,8 @@ const isPDF = computed(() => {
 
 const pdfPreviewSrc = computed(() => {
   if (!selectedDoc.value) return ''
+  // 后端 PDF 必须等 preview-token 换好短效 URL，不能回退到无 token 的 file 路径
+  if (selectedDoc.value.backendFile) return previewFileUrl.value
   if (previewFileUrl.value) return previewFileUrl.value
   return selectedDoc.value.file || ''
 })
@@ -517,13 +519,14 @@ watch(selectedDoc, async (doc) => {
 
   previewLoading.value = true
   try {
-    // 后端 PDF：取短效 token，iframe 流式加载（无需整文件下载）
+    // 后端 PDF：先调 preview-token 拿短效 token（勿用登录 JWT）
     if (doc.backendFile && ext === 'pdf') {
       const { data } = await getDocumentPreviewToken(doc.id)
-      const token = data?.token || data
-      if (token) {
-        previewFileUrl.value = buildDocumentFileUrl(doc.id, token)
+      const previewToken = typeof data === 'string' ? data : data?.token
+      if (!previewToken || String(previewToken).startsWith('eyJ')) {
+        throw new Error('预览 token 获取失败')
       }
+      previewFileUrl.value = buildDocumentFileUrl(doc.id, previewToken)
       return
     }
 

@@ -85,10 +85,11 @@ const http = axios.create({
 
 export const API_BASE = http.defaults.baseURL
 
-/** 构建带短效 token 的文档文件 URL，供 iframe / 新窗口直接加载 */
-export function buildDocumentFileUrl(documentId, token) {
+/** 构建带短效 token 的文档文件 URL，供 iframe / 新窗口直接加载（token 为 preview-token，非登录 JWT） */
+export function buildDocumentFileUrl(documentId, previewToken) {
   const base = (API_BASE || '/api').replace(/\/$/, '')
-  return `${base}/document/${documentId}/file?token=${encodeURIComponent(token)}`
+  const urlBase = base.startsWith('http') ? base : `${window.location.origin}${base}`
+  return `${urlBase}/document/${documentId}/file?token=${encodeURIComponent(previewToken)}`
 }
 
 /* ==============================
