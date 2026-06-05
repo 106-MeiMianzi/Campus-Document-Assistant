@@ -166,8 +166,8 @@
               </div>
 
               <!-- PDF iframe 真实预览 -->
-              <div v-else-if="isPDF" class="preview-iframe-wrap">
-                <iframe :src="selectedDoc.file" class="preview-iframe" :title="selectedDoc.title"></iframe>
+              <div v-else-if="isPDF && pdfPreviewSrc" class="preview-iframe-wrap">
+                <iframe :src="pdfPreviewSrc" class="preview-iframe" :title="selectedDoc.title"></iframe>
               </div>
 
               <!-- DOCX HTML 预览 -->
@@ -204,7 +204,15 @@
         </div>
 
         <div class="preview-actions">
-          <a v-if="isPDF" :href="selectedDoc.file" target="_blank" class="btn btn-outline">
+          <button v-if="isPDF && selectedDoc.backendFile" class="btn btn-outline" @click="openPdfInNewTab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            在新窗口打开
+          </button>
+          <a v-else-if="isPDF && selectedDoc.file" :href="selectedDoc.file" target="_blank" class="btn btn-outline">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
               <polyline points="15 3 21 3 21 9"/>
@@ -212,7 +220,15 @@
             </svg>
             在新窗口打开
           </a>
-          <a v-if="selectedDoc.file" :href="selectedDoc.file" class="btn btn-outline" download>
+          <button v-if="selectedDoc.backendFile" class="btn btn-outline" @click="downloadBackendDoc(selectedDoc)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            下载原文
+          </button>
+          <a v-else-if="selectedDoc.file" :href="selectedDoc.file" class="btn btn-outline" download>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
@@ -312,10 +328,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Navbar from '../components/Navbar.vue'
-import { uploadDocument, getDocumentList, deleteDocument } from '../api/index.js'
+import { uploadDocument, getDocumentList, deleteDocument, fetchDocumentFile } from '../api/index.js'
+import { downloadFile } from '../api/request.js'
 import { getDefaultDocs, getDocText, getDOCXHtml, getXLSXHtml } from '../services/knowledgeBase.js'
 import { useAuthStore } from '../stores/auth.js'
 
@@ -329,6 +346,7 @@ const selectedDoc = ref(null)
 const previewLoading = ref(false)
 const previewText = ref('')
 const previewHtml = ref('')
+const previewBlobUrl = ref('')
 const loadingDocs = ref(true)
 const showImport = ref(false)
 const importing = ref(false)
@@ -371,6 +389,7 @@ const defaultDocMap = new Map(
 function mapBackendDoc(doc) {
   const defaultMeta = defaultDocMap.get(doc.fileName) || {}
   const ext = (doc.fileName || '').split('.').pop().toLowerCase()
+  const hasLocalFile = !!defaultMeta.file
   return {
     id: doc.id,
     title: (doc.fileName || '').replace(/\.[^.]+$/, ''),
@@ -382,7 +401,8 @@ function mapBackendDoc(doc) {
     category: defaultMeta.category || '校园通知',
     tags: defaultMeta.tags || [],
     description: defaultMeta.description || '',
-    file: defaultMeta.file || null,  // 本地预览路径（仅默认文档有）
+    file: hasLocalFile ? defaultMeta.file : (doc.id ? `/document/${doc.id}/file` : null),
+    backendFile: !hasLocalFile && !!doc.id,
     status: doc.status || 'UNKNOWN'
   }
 }
@@ -438,8 +458,15 @@ function filterDocs() { /* computed 自动处理 */ }
 
 const isPDF = computed(() => {
   if (!selectedDoc.value) return false
-  const f = selectedDoc.value.file || ''
-  return f.toLowerCase().endsWith('.pdf')
+  const doc = selectedDoc.value
+  const f = doc.file || ''
+  return f.toLowerCase().endsWith('.pdf') || doc.format === 'pdf'
+})
+
+const pdfPreviewSrc = computed(() => {
+  if (!selectedDoc.value) return ''
+  if (previewBlobUrl.value) return previewBlobUrl.value
+  return selectedDoc.value.file || ''
 })
 
 const isDOCX = computed(() => {
@@ -458,36 +485,71 @@ const isXLSX = computed(() => {
   return ext.endsWith('.xlsx') || ext.endsWith('.xls')
 })
 
+function clearPreviewBlob() {
+  if (previewBlobUrl.value) {
+    URL.revokeObjectURL(previewBlobUrl.value)
+    previewBlobUrl.value = ''
+  }
+}
+
+async function loadBackendFileBlob(doc) {
+  const { data } = await fetchDocumentFile(doc.id)
+  return data
+}
+
+async function downloadBackendDoc(doc) {
+  const fileName = doc.fileName || `${doc.title}.${doc.format}`
+  await downloadFile(`/document/${doc.id}/file`, fileName)
+}
+
+function openPdfInNewTab() {
+  const url = pdfPreviewSrc.value
+  if (url) window.open(url, '_blank')
+}
+
 watch(selectedDoc, async (doc) => {
   previewText.value = ''
   previewHtml.value = ''
+  clearPreviewBlob()
   if (!doc) return
-  // 有文件 URL 的 PDF 直接用 iframe 预览，无需加载文本
-  if (doc.file && doc.file.toLowerCase().endsWith('.pdf')) return
+
+  const ext = (doc.format || (doc.file || '').split('.').pop() || '').toLowerCase()
+
+  // 本地静态 PDF 可直接 iframe 预览
+  if (doc.file && !doc.backendFile && ext === 'pdf') return
 
   previewLoading.value = true
   try {
-    const ext = (doc.file || '').toLowerCase()
-    if (ext.endsWith('.docx') || ext.endsWith('.doc')) {
-      const html = await getDOCXHtml(doc.file)
+    const source = doc.backendFile ? await loadBackendFileBlob(doc) : doc.file
+
+    if (ext === 'pdf') {
+      previewBlobUrl.value = URL.createObjectURL(source)
+      return
+    }
+    if (ext === 'docx' || ext === 'doc') {
+      const html = await getDOCXHtml(source)
       if (html) {
         previewHtml.value = html
       } else {
-        // mammoth 解析失败（如旧版 .doc 格式），回退到纯文本
         const text = await getDocText(doc)
         previewText.value = text || ''
       }
-    } else if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
-      previewHtml.value = await getXLSXHtml(doc.file)
-    } else {
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      previewHtml.value = await getXLSXHtml(source)
+    } else if (source) {
       const text = await getDocText(doc)
       previewText.value = text || ''
     }
   } catch {
     previewText.value = ''
     previewHtml.value = ''
+  } finally {
+    previewLoading.value = false
   }
-  previewLoading.value = false
+})
+
+onUnmounted(() => {
+  clearPreviewBlob()
 })
 
 function toggleDept(dept) {

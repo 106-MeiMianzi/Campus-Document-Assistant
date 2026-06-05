@@ -14,6 +14,10 @@
 
         <div class="history-label">最近对话</div>
         <div class="history-list">
+          <div v-if="historyLoading && chatHistory.length <= 1" class="history-loading">
+            <span class="history-loading-dot"></span>
+            同步对话记录…
+          </div>
           <div
             v-for="conv in chatHistory"
             :key="conv.id"
@@ -236,15 +240,27 @@ import { useRoute } from 'vue-router'
 import Navbar from '../components/Navbar.vue'
 import { askQuestion as apiAsk, getConversationList, getConversationMessages, deleteConversation } from '../api/index.js'
 import { getAllDocs, searchDocs } from '../services/knowledgeBase.js'
-import { marked } from 'marked'
+
+defineOptions({ name: 'Chat' })
+
+const CONVERSATION_CACHE_TTL = 60_000
+let conversationCache = null
+let conversationCacheAt = 0
+let conversationsSynced = false
+let markedParser = null
 
 const route = useRoute()
 const chatRef = ref(null)
 const inputText = ref('')
+const historyLoading = ref(false)
 
-function renderMarkdown(text) {
+async function renderMarkdown(text) {
   if (!text) return ''
-  return marked.parse(text)
+  if (!markedParser) {
+    const { marked } = await import('marked')
+    markedParser = marked
+  }
+  return markedParser.parse(text)
 }
 const thinking = ref(false)
 const selectedCitation = ref(null)
@@ -391,9 +407,9 @@ async function switchChat(id) {
       const { data } = await getConversationMessages(convId)
       const list = Array.isArray(data) ? data : (data?.messages || data?.list || [])
       if (list.length) {
-        chatStore[id] = list.map(m => ({
+        chatStore[id] = await Promise.all(list.map(async m => ({
           role: m.role === 'assistant' ? 'ai' : 'user',
-          content: m.role === 'assistant' ? renderMarkdown(m.content || '') : (m.content || ''),
+          content: m.role === 'assistant' ? await renderMarkdown(m.content || '') : (m.content || ''),
           citations: (m.citations || []).map(c => ({
             doc: c.title || c.doc || '',
             location: c.location || c.department || '',
@@ -401,7 +417,7 @@ async function switchChat(id) {
             date: c.date || '',
             excerpt: c.excerpt || c.snippet || c.content || ''
           }))
-        }))
+        })))
         messages.value = chatStore[id]
       }
     } catch (e) {
@@ -424,6 +440,7 @@ async function deleteChat(id) {
 
   // 异步删后端（静默失败，不影响 UI）
   if (convId) {
+    conversationCacheAt = 0
     deleteConversation(convId).catch(() => {})
   }
 
@@ -466,7 +483,7 @@ async function sendMessage(question) {
         conversationIdMap[currentChatId.value] = data.conversationId
       }
       answer = {
-        content: renderMarkdown(data.answer || data.content || ''),
+        content: await renderMarkdown(data.answer || data.content || ''),
         citations: (data.citations || data.references || []).map(c => ({
           doc: c.title || c.doc || '',
           location: c.location || c.department || '',
@@ -516,32 +533,64 @@ async function scrollToBottom() {
   }
 }
 
-onMounted(async () => {
-  // 从后端加载会话历史
-  try {
-    const { data } = await getConversationList()
-    const convList = Array.isArray(data) ? data : (data?.list || data?.conversations || [])
-    if (convList.length > 0) {
-      // 清空默认会话
-      chatHistory.value = []
-      chatIdCounter = 0
-      convList.forEach(conv => {
-        chatIdCounter++
-        const localId = chatIdCounter
-        chatStore[localId] = []
-        chatHistory.value.unshift({ id: localId, title: conv.title || '新会话' })
-        conversationIdMap[localId] = conv.id || conv.conversationId || conv.conversation_id
-        messagesLoaded[localId] = false
-      })
-      // 切换到第一个会话
-      if (chatHistory.value.length > 0) {
-        switchChat(chatHistory.value[0].id)
-      }
+async function fetchConversationList(force = false) {
+  const now = Date.now()
+  if (!force && conversationCache && now - conversationCacheAt < CONVERSATION_CACHE_TTL) {
+    return conversationCache
+  }
+  const { data } = await getConversationList()
+  const convList = Array.isArray(data) ? data : (data?.list || data?.conversations || [])
+  conversationCache = convList
+  conversationCacheAt = now
+  return convList
+}
+
+function applyConversationList(convList) {
+  if (!convList.length || conversationsSynced) return
+
+  const activeId = currentChatId.value
+  const activeMessages = [...(chatStore[activeId] || [])]
+  const activeTitle = chatHistory.value.find(c => c.id === activeId)?.title || '新对话'
+  const keepActiveChat = activeMessages.length > 0 || thinking.value
+
+  chatHistory.value = []
+  chatIdCounter = 0
+  convList.forEach(conv => {
+    chatIdCounter++
+    const localId = chatIdCounter
+    chatStore[localId] = []
+    chatHistory.value.push({ id: localId, title: conv.title || '新会话' })
+    conversationIdMap[localId] = conv.id || conv.conversationId || conv.conversation_id
+    messagesLoaded[localId] = false
+  })
+
+  if (keepActiveChat) {
+    chatStore[activeId] = activeMessages
+    if (!chatHistory.value.some(c => c.id === activeId)) {
+      chatHistory.value.unshift({ id: activeId, title: activeTitle })
     }
-  } catch (e) {
-    console.warn('加载会话列表失败:', e.message)
+    currentChatId.value = activeId
+    messages.value = chatStore[activeId]
   }
 
+  conversationsSynced = true
+}
+
+async function loadConversations({ force = false } = {}) {
+  if (historyLoading.value || (conversationsSynced && !force)) return
+  historyLoading.value = true
+  try {
+    const convList = await fetchConversationList(force)
+    applyConversationList(convList)
+  } catch (e) {
+    console.warn('加载会话列表失败:', e.message)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+onMounted(() => {
+  // 优先处理跳转问题，不等待会话列表
   if (route.query.q) {
     startNewChat()
     const q = route.query.q.trim()
@@ -551,6 +600,9 @@ onMounted(async () => {
       sendMessage(q)
     }
   }
+
+  // 后台同步侧边栏，不阻塞页面展示
+  loadConversations()
 })
 </script>
 
@@ -673,6 +725,28 @@ onMounted(async () => {
   text-align: center;
   font-size: 0.8rem;
   color: var(--text-tertiary);
+}
+
+.history-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+.history-loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 /* ===== 中间聊天区 ===== */

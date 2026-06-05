@@ -1,35 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import Login from '../views/Login.vue'
-import Home from '../views/Home.vue'
-import Chat from '../views/Chat.vue'
-import Docs from '../views/Docs.vue'
-import Service from '../views/Service.vue'
-
 const routes = [
   {
     path: '/login',
-    component: Login,
+    component: () => import('../views/Login.vue'),
     meta: { guest: true }
   },
   {
     path: '/',
-    component: Home,
+    component: () => import('../views/Home.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/chat',
-    component: Chat,
-    meta: { requiresAuth: true }
+    component: () => import('../views/Chat.vue'),
+    meta: { requiresAuth: true, keepAlive: true }
   },
   {
     path: '/docs',
-    component: Docs,
+    component: () => import('../views/Docs.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/service',
-    component: Service,
+    component: () => import('../views/Service.vue'),
     meta: { requiresAuth: true }
   }
 ]

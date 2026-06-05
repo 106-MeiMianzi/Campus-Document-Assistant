@@ -78,6 +78,11 @@ export function reparseDocument(id) {
   return http.post(`/document/${id}/reparse`)
 }
 
+/** 获取后端存储的文档文件（需登录） */
+export function fetchDocumentFile(id) {
+  return http.get(`/document/${id}/file`, { responseType: 'blob' })
+}
+
 /* ==============================
    Search 检索
    ============================== */
