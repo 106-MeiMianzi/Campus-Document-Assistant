@@ -331,8 +331,8 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Navbar from '../components/Navbar.vue'
-import { uploadDocument, getDocumentList, deleteDocument, fetchDocumentFile } from '../api/index.js'
-import { downloadFile } from '../api/request.js'
+import { uploadDocument, getDocumentList, deleteDocument, fetchDocumentFile, getDocumentPreviewToken } from '../api/index.js'
+import { downloadFile, buildDocumentFileUrl } from '../api/request.js'
 import { getDefaultDocs, getDocText, getDOCXHtml, getXLSXHtml } from '../services/knowledgeBase.js'
 import { useAuthStore } from '../stores/auth.js'
 
@@ -346,7 +346,7 @@ const selectedDoc = ref(null)
 const previewLoading = ref(false)
 const previewText = ref('')
 const previewHtml = ref('')
-const previewBlobUrl = ref('')
+const previewFileUrl = ref('')
 const loadingDocs = ref(true)
 const showImport = ref(false)
 const importing = ref(false)
@@ -465,7 +465,7 @@ const isPDF = computed(() => {
 
 const pdfPreviewSrc = computed(() => {
   if (!selectedDoc.value) return ''
-  if (previewBlobUrl.value) return previewBlobUrl.value
+  if (previewFileUrl.value) return previewFileUrl.value
   return selectedDoc.value.file || ''
 })
 
@@ -485,11 +485,8 @@ const isXLSX = computed(() => {
   return ext.endsWith('.xlsx') || ext.endsWith('.xls')
 })
 
-function clearPreviewBlob() {
-  if (previewBlobUrl.value) {
-    URL.revokeObjectURL(previewBlobUrl.value)
-    previewBlobUrl.value = ''
-  }
+function clearPreviewFileUrl() {
+  previewFileUrl.value = ''
 }
 
 async function loadBackendFileBlob(doc) {
@@ -510,7 +507,7 @@ function openPdfInNewTab() {
 watch(selectedDoc, async (doc) => {
   previewText.value = ''
   previewHtml.value = ''
-  clearPreviewBlob()
+  clearPreviewFileUrl()
   if (!doc) return
 
   const ext = (doc.format || (doc.file || '').split('.').pop() || '').toLowerCase()
@@ -520,12 +517,18 @@ watch(selectedDoc, async (doc) => {
 
   previewLoading.value = true
   try {
-    const source = doc.backendFile ? await loadBackendFileBlob(doc) : doc.file
-
-    if (ext === 'pdf') {
-      previewBlobUrl.value = URL.createObjectURL(source)
+    // 后端 PDF：取短效 token，iframe 流式加载（无需整文件下载）
+    if (doc.backendFile && ext === 'pdf') {
+      const { data } = await getDocumentPreviewToken(doc.id)
+      const token = data?.token || data
+      if (token) {
+        previewFileUrl.value = buildDocumentFileUrl(doc.id, token)
+      }
       return
     }
+
+    const source = doc.backendFile ? await loadBackendFileBlob(doc) : doc.file
+
     if (ext === 'docx' || ext === 'doc') {
       const html = await getDOCXHtml(source)
       if (html) {
@@ -549,7 +552,7 @@ watch(selectedDoc, async (doc) => {
 })
 
 onUnmounted(() => {
-  clearPreviewBlob()
+  clearPreviewFileUrl()
 })
 
 function toggleDept(dept) {

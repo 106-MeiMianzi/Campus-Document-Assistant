@@ -78,7 +78,12 @@ export function reparseDocument(id) {
   return http.post(`/document/${id}/reparse`)
 }
 
-/** 获取后端存储的文档文件（需登录） */
+/** 获取文档预览短效 token（供 iframe 直链加载 PDF） */
+export function getDocumentPreviewToken(id) {
+  return http.get(`/document/${id}/preview-token`)
+}
+
+/** 获取后端存储的文档文件（需登录，用于 DOCX/XLSX 等需 Blob 的场景） */
 export function fetchDocumentFile(id) {
   return http.get(`/document/${id}/file`, { responseType: 'blob' })
 }
